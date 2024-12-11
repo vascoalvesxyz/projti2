@@ -5,7 +5,6 @@
 import sys
 from huffmantree import HuffmanTree
 
-
 class GZIPHeader:
     ''' class for reading and storing GZIP header fields '''
 
@@ -122,6 +121,95 @@ class GZIP:
         self.fileSize = self.f.tell()
         self.f.seek(0)
 
+    ### Exercício 1 a 8 ###
+    def ex1(self):
+        HLIT = self.readBits(5)
+        HDIST = self.readBits(5)
+        HCLEN = self.readBits(4)
+        return HLIT, HDIST, HCLEN
+
+    def ex2(self, hclen):
+        ordem = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
+        comprimentos = [0] * 19  # Inicializar a zero
+
+        for i in range(hclen):
+            comprimentos[ordem[i]] = self.readBits(3)
+
+        return comprimentos 
+
+    def ex3(self, hclen_array):
+        htr = HuffmanTree() 
+
+        max_len = max(hclen_array) # max_len is the code with the largest length 
+        max_symbol = len(hclen_array) # max_symbol é o maior símbolo a codificar
+
+        bl_count = [0 for i in range(max_len+1)]
+        # Get array with number of codes with length N (bl_count)
+        for N in range(1, max_len+1):
+            bl_count[N] += hclen_array.count(N)
+
+        # Get first code of each code length 
+        code = 0
+        next_code = [0 for i in range(max_len+1)]
+        for bits in range(1, max_len+1):
+            code = (code + bl_count[bits-1]) << 1
+            next_code[bits] = code
+
+        # Define codes for each symbol in lexicographical order
+        for n in range(max_symbol):
+            # Length associated with symbol n 
+            length = hclen_array[n]
+            if(length != 0):
+                code = bin(next_code[length])[2:]
+                # In case there are 0s at the start of the code, we have to add them manualy
+                # length-len(code) 0s have to be added
+                extension = "0"*(length-len(code)) 
+                htr.addNode(extension + code, n, False)
+                next_code[length] += 1
+
+        return htr
+
+    def ex4(self, size, hufftree):
+
+        # Array dos comprimentos
+        ht_lens = [] 
+
+        while (len(ht_lens) < size):
+            hufftree.resetCurNode()
+
+            # Procurar próximo nó
+            found = False
+            while(not found):
+                bit = self.readBits(1)
+                codigo = hufftree.nextNode(str(bit))
+                if(codigo != -1 and codigo != -2):
+                    found = True
+
+            # SPECIAL CHARACTERS
+            # 18 - 7 extra bits 
+            # 17 - 3 extra bits
+            # 16 - 2 extra bits
+            if(codigo == 18):
+                amount = self.readBits(7)
+                # According to the 7 bits just read, set the following 11-138 values on the length array to 0 
+                ht_lens += [0]*(11 + amount)
+            if(codigo == 17):
+                amount = self.readBits(3)
+                # According to the 3 bits just read, set the following 3-10 values on the length array to 0 
+                ht_lens += [0]*(3 + amount)
+            if(codigo == 16):
+                amount = self.readBits(2)
+                # According to the 2 bits just read, set the following 3-6 values on the length array to the latest length read
+                ht_lens += [prevCode]*(3 + amount)
+            elif(codigo >= 0 and codigo <= 15):
+                # If a special character isn't found, just set the next codigo length to the value found
+                ht_lens += [codigo]
+                prevCode = codigo
+
+        return ht_lens
+
+
+
     def decompress(self):
         ''' main function for decompressing the gzip file with deflate algorithm '''
 
@@ -145,17 +233,35 @@ class GZIP:
         while not BFINAL == 1:
 
             BFINAL = self.readBits(1)
-
             BTYPE = self.readBits(2)
             if BTYPE != 2:
                 print('Error: Block %d not coded with Huffman Dynamic coding' % (numBlocks + 1))
                 return
 
             # --- STUDENTS --- ADD CODE HERE
-            
-                  
+            hlit, hdist, hlen = self.ex1()
+            print(f"HLIT: {hlit}, HDIST: {hdist}, HCLEN: {hlen}")
 
-            # update number of blocks read
+            hclen_comprimentos = self.ex2(hlen)
+            print(hclen_comprimentos)
+
+            huffman_comprimentos = self.ex3(hclen_comprimentos)      
+            print(huffman_comprimentos)
+
+            hlit_literais = self.ex4(hlit + 257, huffman_comprimentos)			
+            print(hlit_literais)
+
+
+
+            # Calcular o tamanho das tabelas Huffman
+            # num_huffman_literals = HLIT + 257
+            # num_huffman_distances = HDIST + 1  
+            # num_huffman_codes = HCLEN + 4
+
+            # print(f"Num Huffman Literals/Comprimentos: {num_huffman_literals}")
+            # print(f"Num Huffman Distancias: {num_huffman_distances}")
+            # print(f"Num Huffman Codes: {num_huffman_codes}")
+
             numBlocks += 1
 
         # close file
