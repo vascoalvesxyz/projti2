@@ -121,6 +121,7 @@ class GZIP:
         self.fileSize = self.f.tell()
         self.f.seek(0)
 
+
     ### Exercício 1 a 8 ###
     def ex1(self):
         HLIT = self.readBits(5)
@@ -137,7 +138,7 @@ class GZIP:
 
         return comprimentos 
 
-    def ex3(self, hclen_array):
+    def huffmanFromLens(self, hclen_array):
         htr = HuffmanTree() 
 
         max_len = max(hclen_array) # max_len is the code with the largest length 
@@ -169,7 +170,7 @@ class GZIP:
 
         return htr
 
-    def ex4(self, size, hufftree):
+    def treeCodeLens(self, size, hufftree):
 
         # Array dos comprimentos
         ht_lens = [] 
@@ -184,27 +185,19 @@ class GZIP:
                 codigo = hufftree.nextNode(str(bit))
                 if(codigo != -1 and codigo != -2):
                     found = True
-
-            # SPECIAL CHARACTERS
-            # 18 - 7 extra bits 
-            # 17 - 3 extra bits
-            # 16 - 2 extra bits
-            if(codigo == 18):
+            
+            if(codigo == 18): # 18 - 7 extra bits 
                 amount = self.readBits(7)
-                # According to the 7 bits just read, set the following 11-138 values on the length array to 0 
                 ht_lens += [0]*(11 + amount)
             if(codigo == 17):
-                amount = self.readBits(3)
-                # According to the 3 bits just read, set the following 3-10 values on the length array to 0 
+                amount = self.readBits(3) # 17 - 3 extra bits
                 ht_lens += [0]*(3 + amount)
-            if(codigo == 16):
+            if(codigo == 16): # 16 - 2 extra bits
                 amount = self.readBits(2)
-                # According to the 2 bits just read, set the following 3-6 values on the length array to the latest length read
-                ht_lens += [prevCode]*(3 + amount)
+                ht_lens += [prev]*(3 + amount)
             elif(codigo >= 0 and codigo <= 15):
-                # If a special character isn't found, just set the next codigo length to the value found
                 ht_lens += [codigo]
-                prevCode = codigo
+                prev = codigo
 
         return ht_lens
 
@@ -239,28 +232,39 @@ class GZIP:
                 return
 
             # --- STUDENTS --- ADD CODE HERE
+
+            # ex 1 --- Crie um método que leia o formato do bloco (i.e., devolva o valor 
+            # correspondente a HLIT, HDIST e HCLEN), de acordo com a estrutura de 
             hlit, hdist, hlen = self.ex1()
             print(f"HLIT: {hlit}, HDIST: {hdist}, HCLEN: {hlen}")
 
-            hclen_comprimentos = self.ex2(hlen)
-            print(hclen_comprimentos)
+            # ex 2 --- Crie um método que armazene num array os comprimentos dos códigos 
+            # do “alfabeto de comprimentos de códigos”, com base em HCLEN: 
+            clen_comprimentos = self.ex2(hlen)
+            print(clen_comprimentos)
 
-            huffman_comprimentos = self.ex3(hclen_comprimentos)      
-            print(huffman_comprimentos)
+            # ex 3 --- Crie um método que converta os comprimentos dos códigos da alínea 
+            # anterior em códigos de Huffman do "alfabeto de comprimentos de 
+            # códigos"; 
+            huffman_clen = self.huffmanFromLens(clen_comprimentos)          
+            print(huffman_clen)
 
-            hlit_literais = self.ex4(hlit + 257, huffman_comprimentos)			
-            print(hlit_literais)
+            # ex 4 --- Crie um método que leia e armazene num array os HLIT + 257 
+            # comprimentos dos códigos referentes ao alfabeto de literais/comprimentos,
+            # codificados segundo o código de Huffman de comprimentos de códigos: 
+            arr_clen_literais = self.treeCodeLens(hlit + 257, huffman_clen)		
+            print(arr_clen_literais)
 
+            # ex 5 --- Crie um método que leia e armazene num array os HDIST + 1 
+            # comprimentos de código referentes ao alfabeto de distâncias, 
+            # codificados segundo o código de Huffman de comprimentos de códigos 
+            huffman_clen_literais = self.huffmanFromLens(arr_clen_literais)
 
-
-            # Calcular o tamanho das tabelas Huffman
-            # num_huffman_literals = HLIT + 257
-            # num_huffman_distances = HDIST + 1  
-            # num_huffman_codes = HCLEN + 4
-
-            # print(f"Num Huffman Literals/Comprimentos: {num_huffman_literals}")
-            # print(f"Num Huffman Distancias: {num_huffman_distances}")
-            # print(f"Num Huffman Codes: {num_huffman_codes}")
+            # ex 6 --- Usando o método do ponto 3), determine os códigos de Huffman 
+            # referentes aos dois alfabetos (literais / comprimentos e distâncias) e 
+            # armazene-os num array (ver Doc5).
+            arr_hdist_comprimentos = self.treeCodeLens(hdist + 1, huffman_clen_literais)
+            print(arr_hdist_comprimentos) 
 
             numBlocks += 1
 
