@@ -203,92 +203,61 @@ class GZIP:
 
 
     def decompressLZ77(self, HuffmanTreeLITLEN, HuffmanTreeDIST, output):
-     
-		# How many bits required to read if length code read is larger than 265
-		ExtraLITLENBits = [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0]
-		# Length required to add if the length code read if larger than 265
-		ExtraLITLENLens = [11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258]
-	
-		# How many bits required to read if the distance code read is larger than 4
-		ExtraDISTBits = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13]		
-		# Distance required to add if the special character read if larger than 4
-		ExtraDISTLens = [5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577]
 
-		codeLITLEN = -1
+        ExtraLITLENBits = [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0]
+        ExtraLITLENLens = [11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258]
 
-		# Read from the input stream until 256 is found
-		while(codeLITLEN != 256):
-			# Resets the current node to the tree's root
-			HuffmanTreeLITLEN.resetCurNode()
+        ExtraDISTBits = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13]        
+        ExtraDISTLens = [5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577]
 
-			foundLITLEN = False
-			# A distance is considered "found" by default in case the character read is just a literal
-			distFound = True
+        codeLITLEN = -1
 
-			# While a literal or length isn't found in the LITLEN tree, keep searching bit by bit
-			while(not foundLITLEN):
-				curBit = str(self.readBits(1))
-				# Updates the current node according the the bit just read
-				codeLITLEN = HuffmanTreeLITLEN.nextNode(curBit)
+        while(codeLITLEN != 256):
+            HuffmanTreeLITLEN.resetCurNode()
+
+            foundLITLEN = False
+            distFound = True
+
+            while(not foundLITLEN):
+                cur_bit = str(self.readBits(1))
+                codeLITLEN = HuffmanTreeLITLEN.nextNode(cur_bit)
     
-				# If a leaf is reached in the LITLEN tree, follow the instructions according to the value found
-				if (codeLITLEN != -1 and codeLITLEN != -2):
-					foundLITLEN = True
+                if (codeLITLEN != -1 and codeLITLEN != -2):
+                    foundLITLEN = True
      
-					# If the code reached is in the interval [0, 256[, just append the value read corresponding a the literal to the output array
-					if(codeLITLEN < 256):
-						output += [codeLITLEN]
+                    if(codeLITLEN < 256):
+                        output += [codeLITLEN]
 
-					# If the code is in the interval [257, 285], it is refering to the length of the string to copy
-					if(codeLITLEN > 256):
-         
-						distFound = False
+                    if(codeLITLEN > 256):
+                        distFound = False
       
-						# if the code is in the interval [257, 265[, sets the length of the string to copy to the code read - 257 + 3
-						if(codeLITLEN < 265):
-							length = codeLITLEN - 257 + 3
+                        if(codeLITLEN < 265):
+                            length = codeLITLEN - 257 + 3
        
-						# the codes in the interval [265, 285] are special and require more bits to be read
-						else:
-							# dif defines the indices in the "Extra array's" to be used 
-							dif = codeLITLEN - 265
-							# How many extra bits will need to be read
-							readExtra = ExtraLITLENBits[dif]
-							# How much extra length to add
-							lenExtra = ExtraLITLENLens[dif]
-							length = lenExtra + self.readBits(readExtra)
+                        else:
+                            dif = codeLITLEN - 265
+                            readExtra = ExtraLITLENBits[dif]
+                            lenExtra = ExtraLITLENLens[dif]
+                            length = lenExtra + self.readBits(readExtra)
 
-						# Resets the curent node in the distance tree to it's root
-						HuffmanTreeDIST.resetCurNode()
-						# While a distance isn's found in the DIST tree, keep searching bit by bit
-						while(not distFound):
-							distBit = str(self.readBits(1))
-							# Updates the current node according to the bit just read
-							codeDIST = HuffmanTreeDIST.nextNode(distBit)
+                        HuffmanTreeDIST.resetCurNode()
+                        while(not distFound):
+                            distBit = str(self.readBits(1))
+                            codeDIST = HuffmanTreeDIST.nextNode(distBit)
 
-							# If a leaf is reached in the LITLEN tree, follow the instructions according to the value found
-							if(codeDIST != -1 and codeDIST != -2):
-								distFound = True
-
-								# If the code read is in the interval [0, 4[ define the distance to go back to the code read + 1
-								if(codeDIST < 4):
-									distance = codeDIST + 1
-
-								# The codes in the interval [4, 29] are special and require more bits to be read
-								else:
-									# dif defines the indices in the "Extra arrays" to be used
-									dif = codeDIST - 4
-									readExtra = ExtraDISTBits[dif]
-									# How many extra bits need to be read
-									distExtra = ExtraDISTLens[dif]
-									# How much extra distance to add
-									distance = distExtra + self.readBits(readExtra)
-								
-								# For each one of the range(length) iterations, copy the character at index len(output)-distance to the end of the output array
-								for i in range(length):
-									output.append(output[-distance])
-		#print(output)
-		return output
+                            if(codeDIST != -1 and codeDIST != -2):
+                                distFound = True
+                                if(codeDIST < 4):
+                                    distance = codeDIST + 1
+                                else:
+                                    dif = codeDIST - 4
+                                    readExtra = ExtraDISTBits[dif]
+                                    distExtra = ExtraDISTLens[dif]
+                                    distance = distExtra + self.readBits(readExtra)
+                                
+                                for i in range(length):
+                                    output.append(output[-distance])
+        return output
 
     def decompress(self):
         ''' main function for decompressing the gzip file with deflate algorithm '''
@@ -309,6 +278,9 @@ class GZIP:
         print(self.gzh.fName)
 
         # MAIN LOOP - decode block by block
+        f = open(self.gzh.fName, 'wb')
+        out = []
+
         BFINAL = 0
         while not BFINAL == 1:
 
@@ -339,7 +311,7 @@ class GZIP:
             # ex 4 --- Crie um método que leia e armazene num array os HLIT + 257 
             # comprimentos dos códigos referentes ao alfabeto de literais/comprimentos,
             # codificados segundo o código de Huffman de comprimentos de códigos: 
-            arr_clen_literais = self.treeCodeLens(hlit + 257, huffman_clen)		
+            arr_clen_literais = self.treeCodeLens(hlit + 257, huffman_clen)        
             print(arr_clen_literais)
 
             # ex 5 --- Crie um método que leia e armazene num array os HDIST + 1 
@@ -354,22 +326,23 @@ class GZIP:
             print(arr_hdist_comprimentos) 
 
             # ex 7 --- Crie as funções necessárias à descompactação dos dados comprimidos, 
-            # com base nos códigos de Huffman e no algoritmo LZ77 (ver Doc1 e 
-            out = self.decompressLZ77(arr_clen_literais, arr_hdist_comprimentos, out)
+            # com base nos códigos de Huffman e no algoritmo LZ77
+            huf_hdist_comprimentos = self.huffmanFromLens(arr_hdist_comprimentos)
+            out = self.decompressLZ77(huffman_clen_literais, huf_hdist_comprimentos, out)
 
             # ex 8 --- Grave os dados descompactados num ficheiro com o nome original 
             # (consulte a estrutura gzipHeader, nomeadamente o campo fName e 
             # analize a função getHeader do ficheiro gzip.cpp). 
-			if(len(output) > 32768):
-				# Write every charater that exceeds the 327680 range to the file
-				f.write(bytes(output[0 : len(output) - 32768]))
-				# Keep the rest in the output array
-				output = output[len(output) - 32768 :]
+            if(len(out) > 32768):
+                # Write every charater that exceeds the 327680 range to the file
+                f.write(bytes(out[0 : len(out) - 32768]))
+                out = out[len(out) - 32768 :] 
 
             numBlocks += 1
 
+        f.write(bytes(out))
+        f.close()
         # close file
-
         self.f.close()
         print("End: %d block(s) analyzed." % numBlocks)
 
