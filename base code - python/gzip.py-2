@@ -203,82 +203,79 @@ class GZIP:
 
         return ht_lens
 
+    def decodeHuffman(self, hufftree):
+        """
+        Decodifica um símbolo da árvore de Huffman.
 
-    def decompress_LZ77(self, huffman_tree_litlen, huffman_tree_dist, out):
-        # Definição dos arrays que indicam a quantidade extra de bits necessários para os códigos LITLEN e DIST.
-        extra_litlen_bits = [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0]
-        extra_litlen_lens = [11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258]
+        Args:
+            hufftree: Instância da classe HuffmanTree.
+            readBits: Função para ler bits do fluxo comprimido.
 
-        extra_dist_bits = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13]
-        extra_dist_lens = [5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577]
+        Returns:
+            O símbolo decodificado (literais, comprimentos ou distâncias).
+        """
+        hufftree.resetCurNode()  # Garante que o nó atual é a raiz da árvore
+        
+        while True:
+            try: 
+                bit = self.readBits(1)                      # Lê um bit
+            except:
+                return -1
 
-        # Inicializa o código LITLEN com um valor inválido
-        code_litlen = -1
+            pos = hufftree.nextNode(str(bit))           # Atualiza o nó corrente baseado no bit lido
 
-        # Enquanto o código LITLEN não for 256, continua a descomprimir
-        while(code_litlen != 256):
-            huffman_tree_litlen.resetCurNode()  # Reseta o nó atual da árvore Huffman para LITLEN
+            if pos == -1:
+                return pos  # Retorna o valor do índice no alfabeto (valor do símbolo)
+            
+            if pos != -2:  # Se não for um nó de prefixo (não continuar a busca)
+                return pos  # Retorna o valor do índice no alfabeto (valor do símbolo)
 
-            found_litlen = False
-            dist_found = True
 
-            # Laço para encontrar o código LITLEN
-            while(not found_litlen):
-                try:
-                    cur_bit = str(self.readBits(1))  # Lê o próximo bit
-                except EOFError as e:
-                    print("Fim inesperado do stream de entrada.")
-                    return out
+    def decodeLength(symbol):
+        # Mapeia os símbolos para intervalos de comprimento (de acordo com a RFC 1951)
+        length_base = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258]
+        extra_bits = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0]
 
-                # Avança na árvore Huffman com o bit lido
-                code_litlen = huffman_tree_litlen.nextNode(cur_bit)
+        base = length_base[symbol - 257]
+        extra = self.readBits(extra_bits[symbol - 257])
+        return base + extra
 
-                # Se o código encontrado for válido e não for -1 ou -2 (códigos inválidos)
-                if (code_litlen != -1 and code_litlen != -2):
-                    found_litlen = True
+    def decodeDistance(distance):
+        distance_base = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577]
+        extra_bits = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13]
 
-                    # Se o código LITLEN for menor que 256, é um literal
-                    if(code_litlen < 256):
-                        out += [code_litlen]  # Adiciona o valor literal à saída
+        base = distance_base[distance]
+        extra = self.readBits(extra_bits[distance])
+        return base + extra
 
-                    # Se o código LITLEN for maior que 256, é uma referência de distância (código de back-reference)
-                    if(code_litlen > 256):
-                        dist_found = False
 
-                        # Calcula o comprimento do back-reference
-                        if(code_litlen < 265):
-                            length = code_litlen - 257 + 3
-                        else:
-                            dif = code_litlen - 265
-                            read_extra = extra_litlen_bits[dif]
-                            len_extra = extra_litlen_lens[dif]
-                            length = len_extra + self.readBits(read_extra)
+    def decompressLZ77(self, huffman_clen_literais, huffman_clen_distancias, output):
+        while True:
+            # Decodificar o próximo símbolo
+            symbol = self.decodeHuffman(huffman_clen_literais)
 
-                        # Reseta o nó atual da árvore Huffman para DIST
-                        huffman_tree_dist.resetCurNode()
+            if symbol == 256:  # Código especial: fim do bloco
+                break
+            elif symbol < 256:  # Literal (0-255)
+                output.append(symbol)
+            else:  # Comprimento/Distância
 
-                        # Laço para encontrar a distância do back-reference
-                        while(not dist_found):
-                            dist_bit = str(self.readBits(1))  # Lê o próximo bit para distância
-                            code_dist = huffman_tree_dist.nextNode(dist_bit)
+                # Determinar o comprimento e distância
+                length = self.decodeLength(symbol)
+                distance = self.decodeHuffman(huffman_clen_distancias)
 
-                            # Se o código DIST for válido e não for -1 ou -2
-                            if(code_dist != -1 and code_dist != -2):
-                                dist_found = True
-                                # Se o código DIST for menor que 4, a distância é o código DIST + 1
-                                if(code_dist < 4):
-                                    distance = code_dist + 1
-                                else:
-                                    dif = code_dist - 4
-                                    read_extra = extra_dist_bits[dif]
-                                    dist_extra = extra_dist_lens[dif]
-                                    distance = dist_extra + self.readBits(read_extra)
+                # Obter a distância
+                distance = self.decodeDistance(distance)
 
-                                # Adiciona os valores referenciados de volta à saída, conforme o comprimento
-                                for i in range(length):
-                                    out.append(out[-distance])
+                # Garantir que os dados referenciados estão no buffer
+                if len(output) < distance:
+                    raise ValueError(f"Offset {distance} fora dos limites do buffer!")
 
-        return out  # Retorna os dados descomprimidos
+                # Copiar os dados do buffer deslizante
+                for _ in range(length):
+                    output.append(output[-distance])
+        
+        return output
 
     def decompress(self):
         ''' main function for decompressing the gzip file with deflate algorithm '''
@@ -350,26 +347,17 @@ class GZIP:
             # ex 7 --- Crie as funções necessárias à descompactação dos dados comprimidos, 
             # com base nos códigos de Huffman e no algoritmo LZ77
             huf_hdist_comprimentos = self.huffmanFromLens(arr_hdist_comprimentos)
-
-            out += self.decompress_LZ77(huffman_clen_literais, huf_hdist_comprimentos, out)
+            out = self.decompressLZ77(huffman_clen_literais, huf_hdist_comprimentos, out)
 
             # ex 8 --- Grave os dados descompactados num ficheiro com o nome original 
             # (consulte a estrutura gzipHeader, nomeadamente o campo fName e 
             # analize a função getHeader do ficheiro gzip.cpp). 
-            if(len(out) > 32768):
-                string += str(out[0 : len(out) - 32768])
-                out = out[len(out) - 32768 :]
-            else:
-                print(out)
-                string += ''.join(chr(num) for num in out)
-
-
+            string += ''.join(chr(num + 48) for num in out)
 
             numBlocks += 1
 
         print(string)
         f.write(string)
-        # f.write(str((out)))
         f.close()
         # close file
         self.f.close()
