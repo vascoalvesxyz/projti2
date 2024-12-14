@@ -5,6 +5,17 @@
 import sys
 from huffmantree import HuffmanTree
 
+def traverse(arr, node, current_code):
+    if node.isLeaf():
+        if node.index != -1:  # Verifica se é o ultimo
+            arr[node.index] = current_code
+        return
+
+    if node.left:
+        traverse(arr, node.left, current_code + '0')  
+    if node.right:
+        traverse(arr, node.right, current_code + '1')  
+
 class GZIPHeader:
     ''' class for reading and storing GZIP header fields '''
 
@@ -165,129 +176,114 @@ class GZIP:
         return htr;
 
     def treeCodeLens(self, size, hufftree):
-
-        # Array dos comprimentos
+        # Array que irá armazenar os comprimentos dos códigos de Huffman
         ht_lens = [] 
-        prev = 0
+        prev = 0  # Variável para armazenar o código anterior, usada em alguns casos específicos
 
+        # Loop até que o array 'ht_lens' atinja o tamanho desejado
         while (len(ht_lens) < size):
-            hufftree.resetCurNode()
+            hufftree.resetCurNode()  # Reinicia o nó atual da árvore de Huffman
 
-            # Procurar próximo nó
+            # Variável para verificar se o próximo nó foi encontrado
             found = False
-            while(not found):
-                bit = self.readBits(1)
-                codigo = hufftree.nextNode(str(bit))
-                if(codigo != -1 and codigo != -2):
-                    found = True
             
-            if(codigo == 18): # 18 - 7 extra bits 
-                amount = self.readBits(7)
+            # Procura pelo próximo nó
+            while(not found):
+                # Lê um bit e tenta seguir para o próximo nó da árvore de Huffman com base no bit lido
+                bit = self.readBits(1)  
+                codigo = hufftree.nextNode(str(bit))  # Obtém o código associado ao nó atual
+                if(codigo != -1 and codigo != -2):  # Verifica se o código é válido (diferente de -1 e -2)
+                    found = True  # Se encontrou um código válido, termina a procura
+
+            # Caso o código seja 18 (indicado para 7 bits extra), lê mais 7 bits
+            if(codigo == 18): 
+                amount = self.readBits(7)  # Lê os 7 bits extras
+                # Adiciona 0 ao array 'ht_lens' para o comprimento do código, ajustando com base nos bits lidos
                 ht_lens += [0]*(11 + amount)
+
+            # Caso o código seja 17 (indicado para 3 bits extra), lê mais 3 bits
             if(codigo == 17):
-                amount = self.readBits(3) # 17 - 3 extra bits
+                amount = self.readBits(3)  # Lê os 3 bits extras
+                # Adiciona 0 ao array 'ht_lens' para o comprimento do código, ajustando com base nos bits lidos
                 ht_lens += [0]*(3 + amount)
-            if(codigo == 16): # 16 - 2 extra bits
-                amount = self.readBits(2)
+
+            # Caso o código seja 16 (indicado para 2 bits extra), lê mais 2 bits
+            if(codigo == 16):
+                amount = self.readBits(2)  # Lê os 2 bits extras
+                # Adiciona ao array 'ht_lens' o valor do código anterior ajustado com base nos bits lidos
                 ht_lens += [prev]*(3 + amount)
+
+            # Se o código for entre 0 e 15, é adicionado diretamente ao array de comprimentos
             elif(codigo >= 0 and codigo <= 15):
                 ht_lens += [codigo]
-                prev = codigo
+                prev = codigo  # Atualiza o código anterior
 
+        # Retorna o array contendo os comprimentos dos códigos de Huffman
         return ht_lens
 
 
-    def decompress_LZ77(self, HuffmanTreeLITLEN, HuffmanTreeDIST, out):
-     
-        # How many bits required to read if length code read is larger than 265
-        ExtraLITLENBits = [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0]
-        # Length required to add if the length code read if larger than 265
-        ExtraLITLENLens = [11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258]
-    
-        # How many bits required to read if the distance code read is larger than 4
-        ExtraDISTBits = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13]        
-        # Distance required to add if the special character read if larger than 4
-        ExtraDISTLens = [5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577]
+    def decompress_LZ77(self, huffman_tree_litlen, huffman_tree_dist, out):
+        """
+        Função principal para descompressão LZ77.
+        Lê os códigos de comprimento/literal e distância e descomprime os dados.
+        """
+        while True:
+            code_litlen = self._read_huffman_code(huffman_tree_litlen)
 
-        codeLITLEN = -1
+            if code_litlen == 256:  # Código de fim de bloco
+                break
 
-        # Read from the input stream until 256 is found
-        while(codeLITLEN != 256):
-            # Resets the current node to the tree's root
-            HuffmanTreeLITLEN.resetCurNode()
+            if code_litlen < 256:  # Literal
+                out.append(code_litlen)
+            else:  # Comprimento/Distância
+                length = self._calculate_length(code_litlen)
+                distance = self._calculate_distance(huffman_tree_dist)
+                for _ in range(length):
+                    out.append(out[-distance])
 
-            foundLITLEN = False
-            # A distance is considered "found" by default in case the character read is just a literal
-            distFound = True
-
-            # While a literal or length isn't found in the LITLEN tree, keep searching bit by bit
-            while(not foundLITLEN):
-                try:
-                    curBit = str(self.readBits(1))
-                except:
-                    return out
-
-                # Updates the current node according the the bit just read
-                codeLITLEN = HuffmanTreeLITLEN.nextNode(curBit)
-    
-                # If a leaf is reached in the LITLEN tree, follow the instructions according to the value found
-                if (codeLITLEN != -1 and codeLITLEN != -2):
-                    foundLITLEN = True
-     
-                    # If the code reached is in the interval [0, 256[, just append the value read corresponding a the literal to the out array
-                    if(codeLITLEN < 256):
-                        out += [codeLITLEN]
-
-                    # If the code is in the interval [257, 285], it is refering to the length of the string to copy
-                    if(codeLITLEN > 256):
-         
-                        distFound = False
-      
-                        # if the code is in the interval [257, 265[, sets the length of the string to copy to the code read - 257 + 3
-                        if(codeLITLEN < 265):
-                            length = codeLITLEN - 257 + 3
-       
-                        # the codes in the interval [265, 285] are special and require more bits to be read
-                        else:
-                            # dif defines the indices in the "Extra array's" to be used 
-                            dif = codeLITLEN - 265
-                            # How many extra bits will need to be read
-                            readExtra = ExtraLITLENBits[dif]
-                            # How much extra length to add
-                            lenExtra = ExtraLITLENLens[dif]
-                            length = lenExtra + self.readBits(readExtra)
-
-                        # Resets the curent node in the distance tree to it's root
-                        HuffmanTreeDIST.resetCurNode()
-                        # While a distance isn's found in the DIST tree, keep searching bit by bit
-                        while(not distFound):
-                            distBit = str(self.readBits(1))
-                            # Updates the current node according to the bit just read
-                            codeDIST = HuffmanTreeDIST.nextNode(distBit)
-
-                            # If a leaf is reached in the LITLEN tree, follow the instructions according to the value found
-                            if(codeDIST != -1 and codeDIST != -2):
-                                distFound = True
-
-                                # If the code read is in the interval [0, 4[ define the distance to go back to the code read + 1
-                                if(codeDIST < 4):
-                                    distance = codeDIST + 1
-
-                                # The codes in the interval [4, 29] are special and require more bits to be read
-                                else:
-                                    # dif defines the indices in the "Extra arrays" to be used
-                                    dif = codeDIST - 4
-                                    readExtra = ExtraDISTBits[dif]
-                                    # How many extra bits need to be read
-                                    distExtra = ExtraDISTLens[dif]
-                                    # How much extra distance to add
-                                    distance = distExtra + self.readBits(readExtra)
-                                
-                                # For each one of the range(length) iterations, copy the character at index len(out)-distance to the end of the out array
-                                for i in range(length):
-                                    out.append(out[-distance])
-        #print(out)
         return out
+
+    def _read_huffman_code(self, huffman_tree):
+        """
+        Lê um código da árvore de Huffman fornecida bit a bit.
+        """
+        huffman_tree.resetCurNode()
+
+        while True:
+            bit = str(self.readBits(1))
+            code = huffman_tree.nextNode(bit)
+            if code != -1 and code != -2:  # Encontrou uma folha
+                return code
+
+    def _calculate_length(self, code_litlen):
+        """
+        Calcula o comprimento com base no código de comprimento/literal.
+        """
+        extra_litlen_bits = [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0]
+        extra_litlen_lens = [11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258]
+
+        if code_litlen < 265:
+            return code_litlen - 257 + 3
+
+        index = code_litlen - 265
+        extra_bits = self.readBits(extra_litlen_bits[index])
+        return extra_litlen_lens[index] + extra_bits
+
+    def _calculate_distance(self, huffman_tree_dist):
+        """
+        Calcula a distância com base na árvore de Huffman de distâncias.
+        """
+        extra_dist_bits = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13]
+        extra_dist_lens = [5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577]
+
+        code_dist = self._read_huffman_code(huffman_tree_dist)
+
+        if code_dist < 4:
+            return code_dist + 1
+
+        index = code_dist - 4
+        extra_bits = self.readBits(extra_dist_bits[index])
+        return extra_dist_lens[index] + extra_bits
 
     def decompress(self):
         ''' main function for decompressing the gzip file with deflate algorithm '''
@@ -340,23 +336,9 @@ class GZIP:
             print("-----------  EX 3  -----------")
             huffman_tree_clens = self.huffmanFromLens(clen_code_lens)          
 
-            def huffToByteArray(hufftree):
-                byte_array = [''] * 256
-                def traverse(node, current_code):
-                    if node.isLeaf():
-                        if node.index != -1:  # Verifica se é o ultimo
-                            byte_array[node.index] = current_code
-                        return
-
-                    if node.left:
-                        traverse(node.left, current_code + '0')  
-                    if node.right:
-                        traverse(node.right, current_code + '1')  
-                traverse(hufftree.root, "")
-                return byte_array
-
-            codes = huffToByteArray(huffman_tree_clens)
-            print(codes)
+            byte_array = [''] *64
+            traverse(byte_array, huffman_tree_clens.root, "")
+            print(byte_array)
 
             # ex 4 --- Crie um método que leia e armazene num array os HLIT + 257 comprimentos dos códigos referentes ao alfabeto de literais/comprimentos,
             # codificados segundo o código de Huffman de comprimentos de códigos: 
@@ -375,18 +357,20 @@ class GZIP:
             # ex 5 --- Crie um método que leia e armazene num array os HDIST + 1 
             # comprimentos de código referentes ao alfabeto de distâncias, 
             # codificados segundo o código de Huffman de comprimentos de códigos 
-            huffman_tree_litlen = self.huffmanFromLens(litlen_code_lens)
+
+            print("-----------  EX 5  -----------")
+            dist_code_lens = self.treeCodeLens(hdist + 1, huffman_tree_clens)
+            print(dist_code_lens)
 
             # ex 6 --- Usando o método do ponto 3), determine os códigos de Huffman 
             # referentes aos dois alfabetos (literais / comprimentos e distâncias) e 
             # armazene-os num array (ver Doc5).
-            dist_code_lens = self.treeCodeLens(hdist + 1, huffman_tree_clens)
 
+            huffman_tree_litlen = self.huffmanFromLens(litlen_code_lens)
+            huffman_tree_dist = self.huffmanFromLens(dist_code_lens)
 
             # ex 7 --- Crie as funções necessárias à descompactação dos dados comprimidos, 
             # com base nos códigos de Huffman e no algoritmo LZ77
-            huffman_tree_dist = self.huffmanFromLens(dist_code_lens)
-
             out = self.decompress_LZ77(huffman_tree_litlen, huffman_tree_dist, out)
 
             # ex 8 --- Grave os dados descompactados num ficheiro com o nome original 
